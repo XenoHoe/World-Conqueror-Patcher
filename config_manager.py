@@ -13,6 +13,12 @@ mode: macOS
 
 # Game Path
 game_path: ""
+
+# Asset Encryption Key
+asset_key: ""
+
+# Asset IV
+asset_iv: ""
 """
 
 def create_empty_config(config_path="config.yaml"):

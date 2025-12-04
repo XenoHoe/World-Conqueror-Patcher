@@ -7,11 +7,12 @@ import glob
 
 from encrypt_decryptor import encrypt_file_aes_cbc as encrypt_file
 from encrypt_decryptor import decrypt_file_aes_cbc as decrypt_file
-from encrypt_decryptor import KEY
-from encrypt_decryptor import IV
 
 from config_manager import load_config
 from config_manager import update_config
+
+KEY = None
+IV = None
 
 #Extraction Logic:
 #all items in the data/ folder:extracted and decrypted
@@ -22,8 +23,9 @@ from config_manager import update_config
 #Since all settings files are just a [{},{}...], they will be merged based on ID
 #all items in the data/ folder will be decrypted, merged, and re-encrypted.
 #pngs in the original file will be dissected based on xmls, merged with the ones in the working directory, and re-assembled
+#ini files will just be appended, since later keys have priority
 
-class KeyValueAction(argparse.Action):#This function is AI generated
+class KeyValueAction(argparse.Action):#This class is AI generated
     """Custom action to handle --config key value pairs."""
     def __call__(self, parser, namespace, values, option_string=None):
         if len(values) != 2:
@@ -66,7 +68,7 @@ def dump_files(pattern,target_dir,decrypt = False):
 
 def dump_game_files(game_dir,dest_dir = './dump'):
 
-    shutil.rmtree(dest_dir)
+    shutil.rmtree(dest_dir)#Clean dump
 
     os.makedirs(dest_dir, exist_ok=True)
 
@@ -82,6 +84,7 @@ def dump_game_files(game_dir,dest_dir = './dump'):
     return
 
 def main():
+    global KEY,IV
     parser = argparse.ArgumentParser(description='Main script that handles patching of files.')
 
     action_to_run = parser.add_mutually_exclusive_group()
@@ -97,6 +100,9 @@ def main():
     args = parser.parse_args()
 
     config  = load_config()
+
+    KEY = config.get('asset_key').encode() if config.get('asset_key') else None
+    IV = config.get('asset_iv').encode() if config.get('asset_iv') else None
 
     if args.config:
         update_config_items(args.config)
