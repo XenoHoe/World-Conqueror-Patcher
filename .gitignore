@@ -180,5 +180,12 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+#Mac OS
+*.DS_Store
+
 #VS Code
 .vscode/
+
+#Project Specific 
+dump/
+config.yaml

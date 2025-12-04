@@ -51,18 +51,24 @@ def encrypt_file_aes_cbc(file_path,key,iv):
     try:
         with open(file_path, 'rb') as file:
             content = file.read()
+
         #Because the stupid game only reads CRLF
         content = normalize_to_crlf(content)
+
         #Get length
         length = len(content).to_bytes(4, byteorder='little')
+
         #Get hash
         hash = md5(content).digest()
+
         #Encryption sequence
         content = pad(content,16)
         cipher = AES.new(key, AES.MODE_CBC, iv)
         encrypted_data = cipher.encrypt(content)
+
         #Assemble final file
         final_file = hash + length + encrypted_data
+        
         #Write file
         with open(file_path, 'wb') as file:
             file.write(final_file)
