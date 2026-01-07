@@ -187,5 +187,7 @@ cython_debug/
 .vscode/
 
 #Project Specific 
+mods/
 dump/
+temp/
 config.yaml
