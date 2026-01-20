@@ -50,6 +50,7 @@ def update_config_items(items):
 
 def dump_file(source_path,target_dir = './dump',decrypt = False):
     try:
+        os.makedirs(target_dir, exist_ok=True)
         dest_file = shutil.copy(source_path, target_dir)
     except Exception as e:
         print(e)
@@ -60,13 +61,18 @@ def dump_file(source_path,target_dir = './dump',decrypt = False):
 
     return
 
-def dump_files(pattern,target_dir,decrypt = False):
+def dump_files(pattern,target_dir,decrypt = False,preserve_relative_path = False,game_dir = '/'):
     os.makedirs(target_dir, exist_ok=True)
     files = glob.glob(pattern)
     for file_path in files:
         if os.path.isfile(file_path):
-            dump_file(file_path,target_dir,decrypt)
-            print(f"Dumped: {os.path.basename(file_path)}")
+            if preserve_relative_path:
+                relative_dir = os.path.relpath(os.path.dirname(file_path), game_dir)
+                dump_file(file_path,os.path.join(target_dir,relative_dir),decrypt)
+                print(f"Dumped: {os.path.basename(file_path)}")
+            else:
+                dump_file(file_path,target_dir,decrypt)
+                print(f"Dumped: {os.path.basename(file_path)}")
 
 def dump_game_files(game_dir,dest_dir = './dump'):
 
@@ -77,13 +83,22 @@ def dump_game_files(game_dir,dest_dir = './dump'):
     #data files
     for pattern in ['*.json','*.xml']:
         file_pattern = os.path.join(game_dir + 'data/',pattern)
-        dump_files(file_pattern,dest_dir + '/data/',True)
+        dump_files(file_pattern,dest_dir + '/data/',decrypt=True)
 
     #loc files
     localization_pattern = os.path.join(game_dir,'*.ini')
-    dump_files(localization_pattern,dest_dir,False)
+    dump_files(localization_pattern,dest_dir,decrypt=False)
 
+    #image files
+    for pattern in ['image/**.webp','image/**/*.webp']:
+        image_pattern = os.path.join(game_dir,pattern)
+        dump_files(image_pattern,dest_dir,decrypt=False,preserve_relative_path=True,game_dir=game_dir)
+    
+    #image atlases
+    
     return
+
+
 
 def patch_game_files(mod_dir,game_dir):
 
@@ -92,8 +107,9 @@ def patch_game_files(mod_dir,game_dir):
     #Make temporary directory
     os.makedirs('temp',exist_ok=True)
 
-    #data
+    #Patching data files
     mod_data_dir = mod_dir + 'data/'
+    mod_image_dir = mod_dir + 'image/'
 
     if os.path.exists(mod_data_dir):
         datafiles = os.listdir(mod_data_dir)
@@ -107,8 +123,10 @@ def patch_game_files(mod_dir,game_dir):
                 merge_data_file(original_file_path,full_path,True)
             else:
                 shutil.copy(full_path,original_file_path)
+                print("Copied " + os.path.basename(file_path) + ".")
                 #merge_data_file(original_file_path,full_path,True)
     
+    #Patching localization files
     loc_pattern = os.path.join(mod_dir,'*.ini')
     loc_files = glob.glob(loc_pattern)
     for file_path in loc_files:
@@ -118,6 +136,21 @@ def patch_game_files(mod_dir,game_dir):
             merge_data_file(original_file_path,file_path,False)
         else:
             shutil.copy(file_path,original_file_path)
+            print("Copied " + os.path.basename(file_path) + ".")
+    
+    #Patching image files
+    if os.path.exists(mod_image_dir):
+        for pattern in ['image/**.webp','image/**/*.webp']:
+            image_pattern = os.path.join(mod_dir,pattern)
+            image_files = glob.glob(image_pattern)
+            for file_path in image_files:
+                relative_path = os.path.relpath(file_path,mod_dir)
+                original_file_path = os.path.join(game_dir,relative_path)
+                if os.path.exists(original_file_path):
+                    backup_file(original_file_path)
+                shutil.copy(file_path,original_file_path)
+                print("Copied " + os.path.basename(file_path) + ".")
+    
     return
 
 def merge_data_file(original_path,modded_path,decrypt = False):
@@ -169,6 +202,9 @@ def merge_data_file(original_path,modded_path,decrypt = False):
         pass
     
     print("merged " + os.path.basename(original_path) + ".")
+
+def merge_atlas_file():
+    return
 
 def merge_settings(list1,list2):
     new_list = list1
