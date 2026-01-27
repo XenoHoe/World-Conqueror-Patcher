@@ -13,6 +13,9 @@ from encrypt_decryptor import decrypt_file_aes_cbc as decrypt_file
 from config_manager import load_config
 from config_manager import update_config
 
+from atlas_manager import process_atlas_element_tree as read_atlas_manifest
+from atlas_manager import create_atlas_from_folder
+
 KEY = None
 IV = None
 
@@ -74,6 +77,23 @@ def dump_files(pattern,target_dir,decrypt = False,preserve_relative_path = False
                 dump_file(file_path,target_dir,decrypt)
                 print(f"Dumped: {os.path.basename(file_path)}")
 
+def dump_atlas(source_path,game_dir,target_dir = './dump'):
+    try:
+        read_atlas_manifest(source_path,game_dir,target_dir)#This function preserves relative paths
+    except Exception as e:
+        print(e)
+        print(traceback.format_exc())
+
+
+def dump_atlases(pattern,target_dir,game_dir = '/'):
+    os.makedirs(target_dir, exist_ok=True)
+    files = glob.glob(pattern)
+    for file_path in files:
+        if os.path.isfile(file_path):
+            print(f"Dumped: {os.path.basename(file_path)}")
+            dump_atlas(file_path,game_dir,target_dir)
+    return
+
 def dump_game_files(game_dir,dest_dir = './dump'):
 
     shutil.rmtree(dest_dir)#Clean dump
@@ -95,6 +115,9 @@ def dump_game_files(game_dir,dest_dir = './dump'):
         dump_files(image_pattern,dest_dir,decrypt=False,preserve_relative_path=True,game_dir=game_dir)
     
     #image atlases
+    for pattern in ['*.xml','**/*.xml']:
+        xml_pattern = os.path.join(game_dir,pattern)
+        dump_atlases(xml_pattern,dest_dir,game_dir)
     
     return
 
@@ -151,6 +174,44 @@ def patch_game_files(mod_dir,game_dir):
                 shutil.copy(file_path,original_file_path)
                 print("Copied " + os.path.basename(file_path) + ".")
     
+    #Patching atlases
+    for pattern in ['*.png','**/*.png']:
+        atlas_pattern = os.path.join(mod_dir,pattern)
+        atlas_paths = glob.glob(atlas_pattern)
+        for path in atlas_paths:
+            if not os.path.isdir(path):#check if is path is valid atlas folder.
+                continue
+            
+            temp_folder = "./temp"
+
+            #Get modified images
+            image_pattern = os.path.join(path,'*.png')
+            image_paths = glob.glob(image_pattern)
+            if len(image_paths) == 0:
+                continue
+                
+            #Get original locations and backup
+            relative_path = os.path.relpath(path,mod_dir)
+            original_atlas_image_path = os.path.join(game_dir,relative_path)
+            original_atlas_manifest_path = original_atlas_image_path.replace('.png','.xml')
+            if os.path.exists(original_atlas_image_path) and os.path.isfile(original_atlas_image_path):
+                backup_file(original_atlas_image_path)
+            if os.path.exists(original_atlas_manifest_path) and os.path.isfile(original_atlas_manifest_path):
+                backup_file(original_atlas_manifest_path)
+
+            #First, dump original file to temp directory
+            dump_atlas(original_atlas_manifest_path,game_dir,temp_folder)
+            temp_working_dir = os.path.join(temp_folder,os.path.basename(original_atlas_image_path))
+            
+            for image_path in image_paths:
+                shutil.copy2(image_path,temp_working_dir)
+
+            create_atlas_from_folder(temp_working_dir,os.path.dirname(original_atlas_image_path))
+            
+            shutil.rmtree(temp_working_dir)
+
+            print("Modified atlas " + os.path.basename(original_atlas_image_path))
+
     return
 
 def merge_data_file(original_path,modded_path,decrypt = False):
