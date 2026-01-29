@@ -1,0 +1,7 @@
+#AI generated
+
+Pillow>=9.0.0          # Image processing
+lxml>=4.9.0           # XML processing
+pycryptodome>=3.17.0  # Crypto processing
+ruamel.yaml>=0.17.0   # Config Yaml Processing
+rectpack>=0.2.1       # Rect packing algorithm for atlases
