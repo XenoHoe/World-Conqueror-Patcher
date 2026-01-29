@@ -16,6 +16,8 @@ from config_manager import update_config
 from atlas_manager import process_atlas_element_tree as read_atlas_manifest
 from atlas_manager import create_atlas_from_folder
 
+from apk_manager import APKManager
+
 KEY = None
 IV = None
 
@@ -79,7 +81,7 @@ def dump_files(pattern,target_dir,decrypt = False,preserve_relative_path = False
 
 def dump_atlas(source_path,game_dir,target_dir = './dump'):
     try:
-        read_atlas_manifest(source_path,game_dir,target_dir)#This function preserves relative paths
+        return read_atlas_manifest(source_path,game_dir,target_dir)#This function preserves relative paths
     except Exception as e:
         print(e)
         print(traceback.format_exc())
@@ -102,8 +104,8 @@ def dump_game_files(game_dir,dest_dir = './dump'):
 
     #data files
     for pattern in ['*.json','*.xml']:
-        file_pattern = os.path.join(game_dir + 'data/',pattern)
-        dump_files(file_pattern,dest_dir + '/data/',decrypt=True)
+        file_pattern = os.path.join(game_dir,'data',pattern)
+        dump_files(file_pattern,os.path.join(dest_dir,'data'),decrypt=True)
 
     #loc files
     localization_pattern = os.path.join(game_dir,'*.ini')
@@ -121,9 +123,47 @@ def dump_game_files(game_dir,dest_dir = './dump'):
     
     return
 
+def dump_apk_files(apk_path, dest_dir='./dump'):    
+    apk = APKManager(apk_path)
+    extracted_dir = apk.extract()
+    
+    #What we can modify is under the assets folder
+    assets_dir = os.path.join(extracted_dir, "assets")
+    
+    if os.path.exists(assets_dir):
+        #Everything else is the same
+        dump_game_files(assets_dir, dest_dir)
+    
+    apk.cleanup()
+
+def patch_apk_files(mod_dir, apk_path, output_apk=None):
+    apk = APKManager(apk_path)
+    extracted_dir = apk.extract()
+    
+    #Modifying assets
+    assets_dir = os.path.join(extracted_dir, "assets")
+    if os.path.exists(assets_dir):
+        patch_game_files(mod_dir, assets_dir)
+        
+    #Repacking
+    patched_apk = apk.repack(output_apk)
+    
+    #Signing
+    config = load_config()
+    if config.get('apk_signing_enabled', False):
+        apk.sign_apk(
+            patched_apk,
+            config.get('apk_keystore'),
+            config.get('apk_keystore_pass'),
+            config.get('apk_key_alias')
+        )
+    
+    apk.cleanup()
+    return patched_apk
 
 
 def patch_game_files(mod_dir,game_dir):
+    is_apk_mode = load_config().get("mode") == "apk"
 
     restore_from_backups(game_dir)
 
@@ -131,35 +171,37 @@ def patch_game_files(mod_dir,game_dir):
     os.makedirs('temp',exist_ok=True)
 
     #Patching data files
-    mod_data_dir = mod_dir + 'data/'
-    mod_image_dir = mod_dir + 'image/'
+    mod_data_dir = os.path.join(mod_dir,'data')
+    mod_image_dir = os.path.join(mod_dir,'image')
 
     if os.path.exists(mod_data_dir):
         datafiles = os.listdir(mod_data_dir)
         for file_path in datafiles:
 
-            full_path = mod_data_dir + file_path
-            original_file_path = game_dir + 'data/' + file_path
+            full_path = os.path.join(mod_data_dir,file_path)
+            original_file_path = os.path.join(game_dir,'data',file_path)
 
             if os.path.exists(original_file_path):
-                backup_file(original_file_path)
+                if not is_apk_mode:
+                    backup_file(original_file_path)
                 merge_data_file(original_file_path,full_path,True)
             else:
                 shutil.copy(full_path,original_file_path)
-                print("Copied " + os.path.basename(file_path) + ".")
+                print("Copied " + original_file_path + ".")
                 #merge_data_file(original_file_path,full_path,True)
     
     #Patching localization files
     loc_pattern = os.path.join(mod_dir,'*.ini')
     loc_files = glob.glob(loc_pattern)
     for file_path in loc_files:
-        original_file_path = game_dir + os.path.basename(file_path)
+        original_file_path = os.path.join(game_dir,os.path.basename(file_path))
         if os.path.exists(original_file_path):
-            backup_file(original_file_path)
+            if not is_apk_mode:
+                backup_file(original_file_path)
             merge_data_file(original_file_path,file_path,False)
         else:
             shutil.copy(file_path,original_file_path)
-            print("Copied " + os.path.basename(file_path) + ".")
+            print("Merged " + original_file_path + ".")
     
     #Patching image files
     if os.path.exists(mod_image_dir):
@@ -169,10 +211,10 @@ def patch_game_files(mod_dir,game_dir):
             for file_path in image_files:
                 relative_path = os.path.relpath(file_path,mod_dir)
                 original_file_path = os.path.join(game_dir,relative_path)
-                if os.path.exists(original_file_path):
+                if os.path.exists(original_file_path) and not is_apk_mode:
                     backup_file(original_file_path)
                 shutil.copy(file_path,original_file_path)
-                print("Copied " + os.path.basename(file_path) + ".")
+                print("Copied " + original_file_path + ".")
     
     #Patching atlases
     for pattern in ['*.png','**/*.png']:
@@ -190,27 +232,32 @@ def patch_game_files(mod_dir,game_dir):
             if len(image_paths) == 0:
                 continue
                 
-            #Get original locations and backup
+            #Get original locations
             relative_path = os.path.relpath(path,mod_dir)
-            original_atlas_image_path = os.path.join(game_dir,relative_path)
-            original_atlas_manifest_path = original_atlas_image_path.replace('.png','.xml')
-            if os.path.exists(original_atlas_image_path) and os.path.isfile(original_atlas_image_path):
-                backup_file(original_atlas_image_path)
-            if os.path.exists(original_atlas_manifest_path) and os.path.isfile(original_atlas_manifest_path):
-                backup_file(original_atlas_manifest_path)
+            #original_atlas_image_path = os.path.join(game_dir,relative_path)
+            original_atlas_manifest_path = os.path.join(game_dir,relative_path).replace('.png','.xml')
 
             #First, dump original file to temp directory
-            dump_atlas(original_atlas_manifest_path,game_dir,temp_folder)
+            original_atlas_image_path = dump_atlas(original_atlas_manifest_path,game_dir,temp_folder)
             temp_working_dir = os.path.join(temp_folder,os.path.basename(original_atlas_image_path))
             
+            #Replace and add
             for image_path in image_paths:
                 shutil.copy2(image_path,temp_working_dir)
+            
+            #Backup original locations
+            if not is_apk_mode:
+                if os.path.exists(original_atlas_image_path) and os.path.isfile(original_atlas_image_path):
+                    backup_file(original_atlas_image_path)
+                if os.path.exists(original_atlas_manifest_path) and os.path.isfile(original_atlas_manifest_path):
+                    backup_file(original_atlas_manifest_path)
 
             create_atlas_from_folder(temp_working_dir,os.path.dirname(original_atlas_image_path))
             
+            #Remove temp directory
             shutil.rmtree(temp_working_dir)
 
-            print("Modified atlas " + os.path.basename(original_atlas_image_path))
+            print("Modified atlas " + original_atlas_image_path)
 
     return
 
@@ -322,7 +369,7 @@ def main():
                        nargs=2,  # Expect exactly 2 arguments
                        metavar=('KEY', 'VALUE'),  # Help text for the two arguments
                        action=KeyValueAction,
-                       help='Configure key-value pair (e.g., --config mod_directory mods/my_mod/ )')
+                       help='Configure key-value pair (e.g., --config mod_directory mods/my_mod/ ). Can also be done by modifying config.yaml.')
     action_to_run.add_argument('-d','--dump',action='store_true',help = 'Dump supported moddable files in the game directory to dump/ ')
     action_to_run.add_argument('-p','--patch',action='store_true',help = 'Patches files in the configured mod directory into the game directory')
     action_to_run.add_argument('-r','--restore',action='store_true',help = 'Restore game to original state from backups made by this program')
@@ -342,7 +389,7 @@ def main():
 
 
     if game_dir:
-        if not game_dir.endswith("/"):
+        if not game_dir.endswith("/") and not config.get('mode') == "apk":
             game_dir = game_dir + "/"
     else:
         print("Game directory not configured. Please configure using main.py -c game_path /path/to/game/root/directory")
@@ -355,14 +402,26 @@ def main():
     if args.dump:
         if config.get('mode') == "macOS":
             dump_game_files(game_dir)
+        elif config.get('mode') == "apk":
+            dump_apk_files(game_dir)
+        else:
+            print("No valid mode (macOS|apk) selected. Nothing will be done.")
     
     elif args.restore:
         if config.get('mode') == "macOS":
             restore_from_backups(game_dir)
-    
+        elif config.get('mode') == "apk":
+            print("Restoring APK files not supported. Use the original APK instead.")
+        else:
+            print("No valid mode (macOS|apk) selected. Nothing will be done.")
+
     elif args.patch:
         if config.get('mode') == "macOS":
             patch_game_files(mod_dir,game_dir)
+        elif config.get('mode') == "apk":
+            patch_apk_files(mod_dir,game_dir)
+        else:
+            print("No valid mode (macOS|apk) selected. Nothing will be done.")
 
     
     os.makedirs('mods',exist_ok=True)

@@ -19,6 +19,18 @@ asset_key: ""
 
 # Asset IV
 asset_iv: ""
+
+#APK signing
+apk_signing_enabled: true
+
+#Keystore path
+apk_keystore: ""
+
+#keystore pass
+apk_keystore_pass: ""
+
+#Key alais
+apk_key_alias: ""
 """
 
 def create_empty_config(config_path="config.yaml"):

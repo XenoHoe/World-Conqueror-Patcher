@@ -27,7 +27,7 @@ def read_wc4_atlas_xml_file(path):
 
     return root
 
-def process_atlas_element_tree(path,game_dir,mod_dir):
+def process_atlas_element_tree(path,game_dir,mod_dir): #returns the image's path if success
     tree = read_wc4_atlas_xml_file(path)
     
     if tree[0].tag != "Texture":
@@ -37,9 +37,18 @@ def process_atlas_element_tree(path,game_dir,mod_dir):
     directory = os.path.dirname(path)
     image_path = os.path.join(directory,tree[0].get("name"))
 
-    if not(os.path.exists(image_path) and os.path.isfile(image_path)):
-        print(image_path,"does not exist or is not a file, will not parse.")
-        return
+    if not(os.path.exists(image_path) and os.path.isfile(image_path)):#Special logic because android version has webp atlases
+        if image_path.endswith(".png"):
+            print(image_path,"does not exist or is not a file, trying fallback...")
+            image_path = image_path.replace('.png','.webp')
+        else:
+            print(image_path,"is not a png or webp file, implying non-standard format. Will not process.")
+            return
+        if not(os.path.exists(image_path) and os.path.isfile(image_path)):
+            print(image_path,"does not exist or is not a file, will not process.")
+            return
+    
+    
 
     atlas_image = Image.open(image_path)
 
@@ -52,7 +61,7 @@ def process_atlas_element_tree(path,game_dir,mod_dir):
         read_and_save_atlas_region(atlas_image,image_data,target_dir)
 
 
-    return
+    return image_path #Hacky workaround to make sure the temp directory works.
 
 def read_and_save_atlas_region(atlas_image,data,target_dir="temp"):
     name,x,y,w,h = data.get("name"),int(data.get("x")),int(data.get("y")),int(data.get("w")),int(data.get("h"))
@@ -71,13 +80,14 @@ def create_atlas_from_folder(path,target_dir="temp/image_outputs/"):
         return
     #Reading Images
     os.makedirs(target_dir,exist_ok=True)
+    
+    # Determine file extension for input and output
+    is_webp = path.endswith(".webp")
     image_pattern = os.path.join(path,"*.png")
     file_paths = glob.glob(image_pattern)
-    if not path.removesuffix("/").endswith(".png"):
-        path = path.removesuffix("/") + ".png/"
-
+    
     final_filename = os.path.join(target_dir,os.path.basename(path.removesuffix('/')))
-    #print(final_filename)
+    print(final_filename)
     images = {}
 
     for file_path in file_paths:
@@ -114,10 +124,16 @@ def create_atlas_from_folder(path,target_dir="temp/image_outputs/"):
             final_image.paste(images[key], (x, y))
             etree.SubElement(ImageRoot,"Image",name=key,x=str(x),y=str(y),w=str(w),h=str(h),refx="0",refy="0")
 
-    final_image.save(final_filename,"PNG")
+    # Save with appropriate format
+    if is_webp:
+        final_image.save(final_filename, "WEBP")
+        xml_filename = final_filename.replace('.webp', '.xml')
+    else:
+        final_image.save(final_filename, "PNG")
+        xml_filename = final_filename.replace('.png', '.xml')
     
     manifest_text = xml_to_string(TextureRoot) + xml_to_string(ImageRoot)
-    file = open(final_filename.replace('.png','.xml'),'w')
+    file = open(xml_filename,'w')
     file.write(manifest_text)
     file.close()
     return
