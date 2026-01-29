@@ -133,7 +133,7 @@ def create_atlas_from_folder(path,target_dir="temp/image_outputs/"):
         xml_filename = final_filename.replace('.png', '.xml')
     
     manifest_text = xml_to_string(TextureRoot) + xml_to_string(ImageRoot)
-    file = open(xml_filename,'w')
+    file = open(xml_filename,'w',encoding='utf-8')
     file.write(manifest_text)
     file.close()
     return

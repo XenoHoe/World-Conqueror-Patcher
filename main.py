@@ -96,7 +96,7 @@ def dump_atlases(pattern,target_dir,game_dir = '/'):
             dump_atlas(file_path,game_dir,target_dir)
     return
 
-def dump_game_files(game_dir,dest_dir = './dump'):
+def dump_game_files(game_dir,dest_dir = 'dump'):
 
     shutil.rmtree(dest_dir)#Clean dump
 
@@ -111,6 +111,10 @@ def dump_game_files(game_dir,dest_dir = './dump'):
     localization_pattern = os.path.join(game_dir,'*.ini')
     dump_files(localization_pattern,dest_dir,decrypt=False)
 
+    #battle files
+    battle_pattern = os.path.join(game_dir,'stage','*.btl')
+    dump_files(battle_pattern,os.path.join(dest_dir,'stage'),decrypt=False)
+
     #image files
     for pattern in ['image/**.webp','image/**/*.webp']:
         image_pattern = os.path.join(game_dir,pattern)
@@ -123,7 +127,8 @@ def dump_game_files(game_dir,dest_dir = './dump'):
     
     return
 
-def dump_apk_files(apk_path, dest_dir='./dump'):    
+def dump_apk_files(apk_path, dest_dir='dump'):    
+    os.makedirs(dest_dir, exist_ok=True)
     apk = APKManager(apk_path)
     extracted_dir = apk.extract()
     
@@ -173,6 +178,7 @@ def patch_game_files(mod_dir,game_dir):
     #Patching data files
     mod_data_dir = os.path.join(mod_dir,'data')
     mod_image_dir = os.path.join(mod_dir,'image')
+    mod_battle_dir = os.path.join(mod_dir,'stage')
 
     if os.path.exists(mod_data_dir):
         datafiles = os.listdir(mod_data_dir)
@@ -203,6 +209,19 @@ def patch_game_files(mod_dir,game_dir):
             shutil.copy(file_path,original_file_path)
             print("Merged " + original_file_path + ".")
     
+    #Patching btl files
+    if os.path.exists(mod_battle_dir):
+        for pattern in ['stage/**.btl']:
+            btl_pattern = os.path.join(mod_dir,pattern)
+            btl_files = glob.glob(btl_pattern)
+            for file_path in btl_files:
+                relative_path = os.path.relpath(file_path,mod_dir)
+                original_file_path = os.path.join(game_dir,relative_path)
+                if os.path.exists(original_file_path) and not is_apk_mode:
+                    backup_file(original_file_path)
+                shutil.copy(file_path,original_file_path)
+                print("Copied " + original_file_path + ".")
+    
     #Patching image files
     if os.path.exists(mod_image_dir):
         for pattern in ['image/**.webp','image/**/*.webp']:
@@ -224,7 +243,7 @@ def patch_game_files(mod_dir,game_dir):
             if not os.path.isdir(path):#check if is path is valid atlas folder.
                 continue
             
-            temp_folder = "./temp"
+            temp_folder = "temp"
 
             #Get modified images
             image_pattern = os.path.join(path,'*.png')
@@ -267,13 +286,13 @@ def merge_data_file(original_path,modded_path,decrypt = False):
         if decrypt:
             decrypt_file(original_path,KEY,IV)
 
-        with open(original_path,'r') as f:
+        with open(original_path,'r',encoding='utf-8') as f:
             original_content = f.read()
             f.close()
 
         original_content_json = json.loads(original_content)
 
-        with open(modded_path,'r') as f:
+        with open(modded_path,'r',encoding='utf-8') as f:
             modded_content = f.read()
             f.close()
 
@@ -283,7 +302,7 @@ def merge_data_file(original_path,modded_path,decrypt = False):
             .replace('},{', '},\n{').replace('}, {', '},\n{')\
             .replace('[{', '[\n{').replace('}]', '}\n]')
 
-        with open(original_path,'w') as f:
+        with open(original_path,'w',encoding='utf-8') as f:
             f.write(final_content)
 
         if decrypt:
@@ -295,15 +314,15 @@ def merge_data_file(original_path,modded_path,decrypt = False):
             encrypt_file(original_path,KEY,IV)
 
     elif original_path.endswith(".ini"): #Localization files
-        with open(original_path,'r') as f:
+        with open(original_path,'r',encoding='utf-8') as f:
             original_content = f.read()
             f.close()
-        with open(modded_path,'r') as f:
+        with open(modded_path,'r',encoding='utf-8') as f:
             modded_content = f.read()
             f.close()
         final_content = original_content + '\n' + modded_content
 
-        with open(original_path,'w') as f:
+        with open(original_path,'w',encoding='utf-8') as f:
             f.write(final_content)
         
     else:
@@ -389,8 +408,10 @@ def main():
 
 
     if game_dir:
-        if not game_dir.endswith("/") and not config.get('mode') == "apk":
-            game_dir = game_dir + "/"
+        if not config.get('mode') == "apk":
+            game_dir = os.path.normpath(game_dir)
+            if not game_dir.endswith(os.sep):
+                game_dir = game_dir + os.sep
     else:
         print("Game directory not configured. Please configure using main.py -c game_path /path/to/game/root/directory")
         exit()

@@ -191,3 +191,4 @@ mods/
 dump/
 temp/
 config.yaml
+*.jks

@@ -4,6 +4,7 @@ import os
 import shutil
 import tempfile
 import subprocess
+import traceback
 
 class APKManager:
     def __init__(self, apk_path):
@@ -137,27 +138,12 @@ class APKManager:
                 "--out", output_signed,
                 aligned_apk
             ]
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            subprocess.run(cmd, check=True, capture_output=True, text=True, shell=True)
             print(f"APK signed successfully: {output_signed}")
             
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            # 回退到jarsigner
-            print("apksigner not found, trying jarsigner...")
-            cmd = [
-                "jarsigner",
-                "-verbose",
-                "-sigalg", "SHA1withRSA",
-                "-digestalg", "SHA1",
-                "-keystore", keystore_path,
-                "-storepass", keystore_pass,
-                aligned_apk,
-                key_alias
-            ]
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-            
-            # 重新对齐已签名的APK
-            final_apk = self.zipalign_apk(aligned_apk, output_signed)
-            print(f"APK signed with jarsigner: {final_apk}")
+        except Exception as e:
+            print(e)
+            print (traceback.format_exc(e))
         
         os.remove(apk_path)
         os.remove(aligned_apk)
