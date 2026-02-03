@@ -3,6 +3,7 @@ import zipfile
 import os
 import shutil
 import tempfile
+import platform
 import subprocess
 import traceback
 
@@ -138,7 +139,8 @@ class APKManager:
                 "--out", output_signed,
                 aligned_apk
             ]
-            subprocess.run(cmd, check=True, capture_output=True, text=True, shell=True)
+            use_shell = platform.system() == 'Windows'
+            subprocess.run(cmd, check=True, capture_output=True, text=True, shell = use_shell)
             print(f"APK signed successfully: {output_signed}")
             
         except Exception as e:
