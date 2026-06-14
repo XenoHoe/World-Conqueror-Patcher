@@ -1,0 +1,53 @@
+# Patch Schema
+# Defines what files to dump from the game and how to patch them back.
+#
+# dump entries:
+#   pattern: glob pattern relative to game directory
+#   action: copy | atlas
+#   decrypt: true/false (optional, default false)
+#
+# patch entries:
+#   pattern: glob pattern relative to mod directory
+#   action: replace | merge_json | merge_ini | merge_atlas
+#   decrypt: true/false (optional, default false)
+#   match: file | directory (optional, default file)
+
+dump:
+  - pattern: "data/*.json" #Encrypted data
+    action: copy
+    decrypt: true
+  - pattern: "data/*.xml" #Encrypted XML data
+    action: copy
+    decrypt: true
+  - pattern: "*.ini" #loc files
+    action: copy
+  - pattern: "stage/*.btl" #battle stages
+    action: copy
+  - pattern: "image/**/*.webp" #images
+    action: copy
+  - pattern: "*.xml" #atalses under the root folder
+    action: atlas
+  - pattern: "image/*.xml" #atalses under the image folder
+    action: atlas
+  - pattern: "layout*.xml" #UI layout definitions
+    action: copy
+
+patch:
+  - pattern: "data/*.json"
+    action: merge_json
+    decrypt: true
+  - pattern: "data/*.xml"
+    action: replace
+    decrypt: true
+  - pattern: "*.ini"
+    action: merge_ini
+  - pattern: "stage/**/*.btl"
+    action: replace
+  - pattern: "image/**/*.webp"
+    action: replace
+  - pattern: "**/*.png"
+    action: merge_atlas
+    match: directory
+  - pattern: "**/*.webp"
+    action: merge_atlas
+    match: directory

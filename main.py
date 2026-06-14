@@ -13,6 +13,8 @@ from encrypt_decryptor import decrypt_file_aes_cbc as decrypt_file
 from config_manager import load_config
 from config_manager import update_config
 
+from schema_manager import load_schema
+
 from atlas_manager import process_atlas_element_tree as read_atlas_manifest
 from atlas_manager import create_atlas_from_folder
 
@@ -95,43 +97,33 @@ def dump_atlases(pattern, target_dir, game_dir='/'):
             dump_atlas(file_path, game_dir, target_dir)
 
 
-def dump_game_files(game_dir, dest_dir='dump'):
+def dump_game_files(game_dir, dest_dir='dump', schema=None):
     shutil.rmtree(dest_dir)  # Clean dump
     os.makedirs(dest_dir, exist_ok=True)
 
-    # data files
-    for pattern in ['*.json', '*.xml']:
-        file_pattern = os.path.join(game_dir, 'data', pattern)
-        dump_files(file_pattern, os.path.join(dest_dir, 'data'), decrypt=True)
+    if schema is None:
+        schema = load_schema()
 
-    # loc files
-    localization_pattern = os.path.join(game_dir, '*.ini')
-    dump_files(localization_pattern, dest_dir, decrypt=False)
+    for step in schema.get('dump', []):
+        action = step['action']
+        pattern = os.path.join(game_dir, step['pattern'])
+        decrypt = step.get('decrypt', False)
 
-    # battle files
-    battle_pattern = os.path.join(game_dir, 'stage', '*.btl')
-    dump_files(battle_pattern, os.path.join(dest_dir, 'stage'), decrypt=False)
-
-    # image files
-    for pattern in ['image/**.webp', 'image/**/*.webp']:
-        image_pattern = os.path.join(game_dir, pattern)
-        dump_files(image_pattern, dest_dir, decrypt=False, preserve_relative_path=True, game_dir=game_dir)
-
-    # image atlases — only parse XML files that are adjacent to a PNG/WebP image
-    for pattern in ['*.xml', '**/*.xml']:
-        xml_pattern = os.path.join(game_dir, pattern)
-        dump_atlases(xml_pattern, dest_dir, game_dir)
+        if action == 'copy':
+            dump_files(pattern, dest_dir, decrypt=decrypt, preserve_relative_path=True, game_dir=game_dir)
+        elif action == 'atlas':
+            dump_atlases(pattern, dest_dir, game_dir)
 
     return
 
 
-def dump_apk_files(apk_path, dest_dir='dump'):
+def dump_apk_files(apk_path, dest_dir='dump', schema=None):
     os.makedirs(dest_dir, exist_ok=True)
     apk = APKManager(apk_path)
     extracted_dir = apk.extract()
     assets_dir = os.path.join(extracted_dir, "assets")
     if os.path.exists(assets_dir):
-        dump_game_files(assets_dir, dest_dir)
+        dump_game_files(assets_dir, dest_dir, schema)
     apk.cleanup()
 
 
@@ -164,12 +156,12 @@ def detect_atlas_format(manifest_path, game_dir):
     return "PNG"
 
 
-def patch_apk_files(mod_dir, apk_path, output_apk=None):
+def patch_apk_files(mod_dir, apk_path, output_apk=None, schema=None):
     apk = APKManager(apk_path)
     extracted_dir = apk.extract()
     assets_dir = os.path.join(extracted_dir, "assets")
     if os.path.exists(assets_dir):
-        patch_game_files(mod_dir, assets_dir)
+        patch_game_files(mod_dir, assets_dir, schema)
 
     patched_apk = apk.repack(output_apk)
     config = load_config()
@@ -184,134 +176,131 @@ def patch_apk_files(mod_dir, apk_path, output_apk=None):
     return patched_apk
 
 
-def patch_game_files(mod_dir, game_dir):
+def patch_game_files(mod_dir, game_dir, schema=None):
     is_apk_mode = load_config().get("mode") == "apk"
     restore_from_backups(game_dir)
     os.makedirs('temp', exist_ok=True)
 
-    mod_data_dir = os.path.join(mod_dir, 'data')
-    mod_image_dir = os.path.join(mod_dir, 'image')
-    mod_battle_dir = os.path.join(mod_dir, 'stage')
+    if schema is None:
+        schema = load_schema()
 
-    # ---- Data files ----
-    if os.path.exists(mod_data_dir):
-        for file_name in os.listdir(mod_data_dir):
-            full_path = os.path.join(mod_data_dir, file_name)
-            original_file_path = os.path.join(game_dir, 'data', file_name)
-            if os.path.exists(original_file_path):
-                if not is_apk_mode:
-                    backup_file(original_file_path)
-                merge_data_file(original_file_path, full_path, True)
-            else:
-                shutil.copy(full_path, original_file_path)
-                print("Copied " + original_file_path + ".")
+    for step in schema.get('patch', []):
+        action = step['action']
+        pattern = step['pattern']
+        decrypt = step.get('decrypt', False)
+        match_type = step.get('match', 'file')
 
-    # ---- Localization files ----
-    loc_pattern = os.path.join(mod_dir, '*.ini')
-    for file_path in glob.glob(loc_pattern):
-        original_file_path = os.path.join(game_dir, os.path.basename(file_path))
-        if os.path.exists(original_file_path):
-            if not is_apk_mode:
-                backup_file(original_file_path)
-            merge_data_file(original_file_path, file_path, False)
+        full_pattern = os.path.join(mod_dir, pattern)
+        if match_type == 'directory':
+            items = [p for p in glob.glob(full_pattern, recursive=True) if os.path.isdir(p)]
         else:
-            shutil.copy(file_path, original_file_path)
-            print("Merged " + original_file_path + ".")
+            items = [p for p in glob.glob(full_pattern, recursive=True) if os.path.isfile(p)]
 
-    # ---- BTL battle files ----
-    if os.path.exists(mod_battle_dir):
-        for btl_path in glob.glob(os.path.join(mod_dir, 'stage/**.btl')):
-            relative_path = os.path.relpath(btl_path, mod_dir)
-            original_file_path = os.path.join(game_dir, relative_path)
-            if os.path.exists(original_file_path) and not is_apk_mode:
-                backup_file(original_file_path)
-            shutil.copy(btl_path, original_file_path)
-            print("Copied " + original_file_path + ".")
+        for mod_path in items:
+            relative_path = os.path.relpath(mod_path, mod_dir)
+            game_path = os.path.join(game_dir, relative_path)
 
-    # ---- Image files (standalone WebP) ----
-    if os.path.exists(mod_image_dir):
-        for pattern in ['image/**.webp', 'image/**/*.webp']:
-            for file_path in glob.glob(os.path.join(mod_dir, pattern)):
-                relative_path = os.path.relpath(file_path, mod_dir)
-                original_file_path = os.path.join(game_dir, relative_path)
-                if os.path.exists(original_file_path) and not is_apk_mode:
-                    backup_file(original_file_path)
-                shutil.copy(file_path, original_file_path)
-                print("Copied " + original_file_path + ".")
-
-    # ---- Atlases ----
-    for pattern in ['*.png', '**/*.png', '*.webp', '**/*.webp']:
-        for path in glob.glob(os.path.join(mod_dir, pattern), recursive=True):
-            if not os.path.isdir(path):
-                continue
-
-            temp_folder = "temp"
-
-            # Collect modified images
-            image_paths = glob.glob(os.path.join(path, '*.png'))
-            if not image_paths:
-                continue
-
-            relative_path = os.path.relpath(path, mod_dir)
-            # Build the manifest path from the folder name — XML is always .xml
-            # and the game always has the XML named after the .png variant
-            folder_basename = os.path.basename(relative_path)
-            if folder_basename.endswith('.webp'):
-                folder_basename = folder_basename.replace('.webp', '.png')
-            manifest_basename = folder_basename.replace('.png', '.xml')
-            original_atlas_manifest_path = os.path.join(
-                game_dir, os.path.dirname(relative_path), manifest_basename
-            )
-
-            if not os.path.exists(original_atlas_manifest_path):
-                print(f"Warning: atlas manifest not found at {original_atlas_manifest_path}, skipping.")
-                continue
-
-            # Detect the format of the *target* game directory
-            target_format = detect_atlas_format(original_atlas_manifest_path, game_dir)
-            print(f"Target atlas format for {folder_basename}: {target_format}")
-
-            # Dump the original atlas to temp to get individual PNGs
-            # Returns (image_path, original_format, output_folder)
-            dump_result = dump_atlas(original_atlas_manifest_path, game_dir, temp_folder)
-            if dump_result is None:
-                print(f"Warning: could not parse atlas manifest at {original_atlas_manifest_path}, skipping.")
-                continue
-            original_atlas_image_path, _, temp_working_dir = dump_result
-
-            if not os.path.isdir(temp_working_dir):
-                print(f"Warning: temp working dir not found ({temp_working_dir}), skipping.")
-                continue
-
-            # Overlay mod images
-            for img_path in image_paths:
-                shutil.copy2(img_path, temp_working_dir)
-
-            # Determine the output directory in the game dir
-            atlas_dir = os.path.dirname(original_atlas_manifest_path)
-            base_name = os.path.basename(folder_basename)  # e.g. image_ui_hd.png
-            if target_format == "WEBP":
-                output_atlas_path = os.path.join(atlas_dir, base_name.replace('.png', '.webp'))
-            else:
-                output_atlas_path = os.path.join(atlas_dir, base_name)
-            output_dir = os.path.dirname(output_atlas_path)
-
-            # Backup originals
-            if not is_apk_mode:
-                if os.path.exists(original_atlas_manifest_path) and os.path.isfile(original_atlas_manifest_path):
-                    backup_file(original_atlas_manifest_path)
-                for ext in ('.png', '.webp'):
-                    img_candidate = os.path.join(atlas_dir, base_name.replace('.png', ext))
-                    if os.path.exists(img_candidate) and os.path.isfile(img_candidate):
-                        backup_file(img_candidate)
-
-            # Rebuild atlas — output format is determined by the target, not the mod source
-            create_atlas_from_folder(temp_working_dir, output_dir, output_format=target_format)
-
-            shutil.rmtree(temp_working_dir)
-            print("Modified atlas " + output_atlas_path)
+            if action == 'replace':
+                _patch_replace(mod_path, game_path, decrypt, is_apk_mode)
+            elif action == 'merge_json':
+                _patch_merge_json(mod_path, game_path, decrypt, is_apk_mode)
+            elif action == 'merge_ini':
+                _patch_merge_ini(mod_path, game_path, is_apk_mode)
+            elif action == 'merge_atlas':
+                _patch_merge_atlas(mod_path, game_dir, mod_dir, is_apk_mode)
 
     return
+
+
+def _patch_replace(mod_path, game_path, decrypt, is_apk_mode):
+    if os.path.exists(game_path) and not is_apk_mode:
+        backup_file(game_path)
+    if decrypt:
+        shutil.copy(mod_path, game_path)
+        encrypt_file(game_path, KEY, IV)
+    else:
+        shutil.copy(mod_path, game_path)
+    print("Replaced " + os.path.basename(game_path) + ".")
+
+
+def _patch_merge_json(mod_path, game_path, decrypt, is_apk_mode):
+    if os.path.exists(game_path):
+        if not is_apk_mode:
+            backup_file(game_path)
+        merge_data_file(game_path, mod_path, decrypt)
+    else:
+        if decrypt:
+            shutil.copy(mod_path, game_path)
+            encrypt_file(game_path, KEY, IV)
+        else:
+            shutil.copy(mod_path, game_path)
+        print("Copied " + os.path.basename(game_path) + ".")
+
+
+def _patch_merge_ini(mod_path, game_path, is_apk_mode):
+    if os.path.exists(game_path):
+        if not is_apk_mode:
+            backup_file(game_path)
+        merge_data_file(game_path, mod_path, False)
+    else:
+        shutil.copy(mod_path, game_path)
+        print("Copied " + os.path.basename(game_path) + ".")
+
+
+def _patch_merge_atlas(mod_folder, game_dir, mod_dir, is_apk_mode):
+    image_paths = glob.glob(os.path.join(mod_folder, '*.png'))
+    if not image_paths:
+        return
+
+    relative_path = os.path.relpath(mod_folder, mod_dir)
+    folder_basename = os.path.basename(relative_path)
+    if folder_basename.endswith('.webp'):
+        folder_basename = folder_basename.replace('.webp', '.png')
+    manifest_basename = folder_basename.replace('.png', '.xml')
+    original_atlas_manifest_path = os.path.join(
+        game_dir, os.path.dirname(relative_path), manifest_basename
+    )
+
+    if not os.path.exists(original_atlas_manifest_path):
+        print(f"Warning: atlas manifest not found at {original_atlas_manifest_path}, skipping.")
+        return
+
+    target_format = detect_atlas_format(original_atlas_manifest_path, game_dir)
+    print(f"Target atlas format for {folder_basename}: {target_format}")
+
+    temp_folder = "temp"
+    dump_result = dump_atlas(original_atlas_manifest_path, game_dir, temp_folder)
+    if dump_result is None:
+        print(f"Warning: could not parse atlas manifest at {original_atlas_manifest_path}, skipping.")
+        return
+    _, _, temp_working_dir = dump_result
+
+    if not os.path.isdir(temp_working_dir):
+        print(f"Warning: temp working dir not found ({temp_working_dir}), skipping.")
+        return
+
+    for img_path in image_paths:
+        shutil.copy2(img_path, temp_working_dir)
+
+    atlas_dir = os.path.dirname(original_atlas_manifest_path)
+    base_name = os.path.basename(folder_basename)
+    if target_format == "WEBP":
+        output_atlas_path = os.path.join(atlas_dir, base_name.replace('.png', '.webp'))
+    else:
+        output_atlas_path = os.path.join(atlas_dir, base_name)
+    output_dir = os.path.dirname(output_atlas_path)
+
+    if not is_apk_mode:
+        if os.path.exists(original_atlas_manifest_path) and os.path.isfile(original_atlas_manifest_path):
+            backup_file(original_atlas_manifest_path)
+        for ext in ('.png', '.webp'):
+            img_candidate = os.path.join(atlas_dir, base_name.replace('.png', ext))
+            if os.path.exists(img_candidate) and os.path.isfile(img_candidate):
+                backup_file(img_candidate)
+
+    create_atlas_from_folder(temp_working_dir, output_dir, output_format=target_format)
+    shutil.rmtree(temp_working_dir)
+    print("Modified atlas " + output_atlas_path)
 
 
 def merge_data_file(original_path, modded_path, decrypt=False):
@@ -428,11 +417,13 @@ def main():
         if not mod_dir.endswith("/"):
             mod_dir = mod_dir + "/"
 
+    schema = load_schema()
+
     if args.dump:
         if config.get('mode') == "macOS":
-            dump_game_files(game_dir)
+            dump_game_files(game_dir, schema=schema)
         elif config.get('mode') == "apk":
-            dump_apk_files(game_dir)
+            dump_apk_files(game_dir, schema=schema)
         else:
             print("No valid mode (macOS|apk) selected. Nothing will be done.")
 
@@ -446,9 +437,9 @@ def main():
 
     elif args.patch:
         if config.get('mode') == "macOS":
-            patch_game_files(mod_dir, game_dir)
+            patch_game_files(mod_dir, game_dir, schema=schema)
         elif config.get('mode') == "apk":
-            patch_apk_files(mod_dir, game_dir)
+            patch_apk_files(mod_dir, game_dir, schema=schema)
         else:
             print("No valid mode (macOS|apk) selected. Nothing will be done.")
 
