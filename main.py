@@ -6,6 +6,7 @@ import os
 import glob
 
 import json
+import xml.etree.ElementTree as ET
 
 from encrypt_decryptor import encrypt_file_aes_cbc as encrypt_file
 from encrypt_decryptor import decrypt_file_aes_cbc as decrypt_file
@@ -208,6 +209,8 @@ def patch_game_files(mod_dir, game_dir, schema=None):
                 _patch_merge_ini(mod_path, game_path, is_apk_mode)
             elif action == 'merge_atlas':
                 _patch_merge_atlas(mod_path, game_dir, mod_dir, is_apk_mode)
+            elif action == 'merge_xml':
+                _patch_merge_xml(mod_path, game_path, decrypt, is_apk_mode)
 
     return
 
@@ -301,6 +304,66 @@ def _patch_merge_atlas(mod_folder, game_dir, mod_dir, is_apk_mode):
     create_atlas_from_folder(temp_working_dir, output_dir, output_format=target_format)
     shutil.rmtree(temp_working_dir)
     print("Modified atlas " + output_atlas_path)
+
+
+def _patch_merge_xml(mod_path, game_path, decrypt, is_apk_mode):
+    if os.path.exists(game_path):
+        if not is_apk_mode:
+            backup_file(game_path)
+        merge_xml_data(game_path, mod_path, decrypt)
+    else:
+        if decrypt:
+            shutil.copy(mod_path, game_path)
+            encrypt_file(game_path, KEY, IV)
+        else:
+            shutil.copy(mod_path, game_path)
+        print("Copied " + os.path.basename(game_path) + ".")
+
+
+def merge_xml_data(original_path, modded_path, decrypt=False):
+    if decrypt:
+        decrypt_file(original_path, KEY, IV)
+
+    tree_orig = ET.parse(original_path)
+    root_orig = tree_orig.getroot()
+
+    tree_mod = ET.parse(modded_path)
+    root_mod = tree_mod.getroot()
+
+    if root_orig.tag != root_mod.tag:
+        print(f"Warning: Root tag mismatch in {os.path.basename(original_path)}: "
+              f"original <{root_orig.tag}> vs mod <{root_mod.tag}>. Skipping merge.")
+        if decrypt:
+            encrypt_file(original_path, KEY, IV)
+        return
+
+    for mod_child in list(root_mod):
+        key = _element_key(mod_child)
+        found_idx = None
+        for i, orig_child in enumerate(list(root_orig)):
+            if _element_key(orig_child) == key:
+                found_idx = i
+                break
+        if found_idx is not None:
+            root_orig.remove(list(root_orig)[found_idx])
+            root_orig.insert(found_idx, mod_child)
+        else:
+            root_orig.append(mod_child)
+
+    tree_orig.write(original_path, encoding='utf-8', xml_declaration=True)
+
+    if decrypt:
+        encrypt_file(original_path, KEY, IV)
+
+    print("merged " + os.path.basename(original_path) + ".")
+
+
+def _element_key(element):
+    tag = element.tag
+    attr = element.get('id') or element.get('Id') or element.get('name') or element.get('Name')
+    if attr is not None:
+        return (tag, attr)
+    return (tag,)  # no id/name: match on tag alone (unlikely to duplicate but handles it)
 
 
 def merge_data_file(original_path, modded_path, decrypt=False):

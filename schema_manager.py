@@ -14,7 +14,7 @@ DEFAULT_SCHEMA = """# Patch Schema
 #
 # patch entries:
 #   pattern: glob pattern relative to mod directory
-#   action: replace | merge_json | merge_ini | merge_atlas
+#   action: replace | merge_json | merge_ini | merge_atlas | merge_xml
 #   decrypt: true/false (optional, default false)
 #   match: file | directory (optional, default file)
 
@@ -39,7 +39,7 @@ patch:
     action: merge_json
     decrypt: true
   - pattern: "data/*.xml"
-    action: replace
+    action: merge_xml
     decrypt: true
   - pattern: "*.ini"
     action: merge_ini

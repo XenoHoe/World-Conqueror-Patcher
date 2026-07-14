@@ -8,7 +8,7 @@
 #
 # patch entries:
 #   pattern: glob pattern relative to mod directory
-#   action: replace | merge_json | merge_ini | merge_atlas
+#   action: replace | merge_json | merge_ini | merge_atlas | merge_xml
 #   decrypt: true/false (optional, default false)
 #   match: file | directory (optional, default file)
 
@@ -31,13 +31,15 @@ dump:
     action: atlas
   - pattern: "layout*.xml" #UI layout definitions
     action: copy
+  - pattern: "*.bin" #Animation files
+    action: copy
 
 patch:
   - pattern: "data/*.json"
     action: merge_json
     decrypt: true
   - pattern: "data/*.xml"
-    action: replace
+    action: merge_xml
     decrypt: true
   - pattern: "*.ini"
     action: merge_ini
@@ -51,3 +53,5 @@ patch:
   - pattern: "**/*.webp"
     action: merge_atlas
     match: directory
+  - pattern: "*.bin"
+    action: replace
