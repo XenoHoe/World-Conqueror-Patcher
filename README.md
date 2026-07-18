@@ -74,14 +74,16 @@ apk_key_alias: "test"
 
 ## Patching Logic
 1. The script restores any backup files that exist within the directory
-2. For each file in the mod directory, the script checks if a corresponding file exists in the game directory. If not, the file is copied in. Otherwise, the script decides what to do based on the file type. In macOS mode, a backup is created.
-3. For .ini localization files, the modded files are appened to the existing files things later entries have priority.
-4. For .json files in the data folder, if an entry's Id already exists in the original file, the entire entry in the original file is replaced. Otherwise, it is simply added to the list.
-5. For .xml data files,  a direct replacement happens since I have no idea what to do with them yet. This may change in the future.
-6. For .webp image files and .btl battle files, a direct replacement happens, since that's what supposed to happen.
-7. For atalses, i.e. .png/.webp files accompanied by an .xml file in the game files or folders ending with .png/.webp in the dump, the atlas in the game files are first dissected into a folder of .pngs, then any pngs with the same names are replaced and new ones are added. The pngs are repacked into atlases, replacing the corresponding ones in the game directory.
+2. Based on matching patterns defined in schema.yaml, the script makes replacements and merges, and decrypts/re-encrypts files as needed. You may edit schema.yaml as needed.
+3. replace | merge_json | merge_ini | merge_atlas | merge_xml
+- replace: Directly repalces the file.
+- merge_ini: Merges ini files. Literally appends user ini to the end of the existing ini, since later entries take priority.
+- merge_json: Merges json files. Most if not all .json data files are in the format of a root array containing entries with unique IDs. The script repalces entries with identical IDs and adds entries with new IDs.
+- merge_xml: Merges xml files. The script checks if the root tags of the xml files match, then replace entries with matching tag and at least one of the id or name attribute. 
+- merge_atlas: For atalses, i.e. .png/.webp files accompanied by an .xml file in the game files or folders ending with .png/.webp in the dump, the atlas in the game files are first dissected into a folder of .pngs, then any pngs with the same names are replaced and new ones are added. The pngs are repacked into atlases, replacing the corresponding ones in the game directory.
 
 ## How to Mod
-1. Running `--dump` is highly recommended as it provides insight into what's inside the game's folders and what can be modified. 
-2. Mess around! Any supported file in your mod folder will map to the game folder.
-3. To test  your mod, run `--patch` and launch the game.
+1. Configure your mode (Usually apk), game directory and mod directory with `--configure` or by editing config.yaml(generated on first run).
+2. Running `--dump` is highly recommended as it provides insight into what's inside the game's folders and what can be modified. 
+3. Mess around! Any supported file in your mod folder will map to the game folder.
+4. To test your mod, run `--patch` and launch the game.
